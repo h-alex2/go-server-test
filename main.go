@@ -2,33 +2,43 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"os"
+	"net/http"
+	"time"
 
 	"github.com/h-alex2/go-server-test/config"
-	"github.com/joho/godotenv"
+	"github.com/h-alex2/go-server-test/route"
+	"github.com/h-alex2/go-server-test/util"
 )
 
 func main() {
-	err := godotenv.Load(".env")
+	DB_URL := util.GetEnv("DB_URI")
+	DB_NAME := util.GetEnv("DB_NAME")
+	BASE_URI := util.GetEnv("BASE_URI")
 
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
-
-	DB_URL := os.Getenv("DB_URI")
-
-	client, err := config.GetMongoDBClient(DB_URL)
+	client, err, context, cancel := config.GetMongoDBClient(DB_URL, DB_NAME)
 
 	if err != nil {
 		panic(err)
 	}
 
 	defer func() {
-		if err := client.CloseMongoDB(); err != nil {
-			panic(err)
-		}
+		client.CloseMongoDB()
+		cancel()
 	}()
 
 	fmt.Println("Success Connect DB")
+
+	srv := &http.Server{
+		Addr:         BASE_URI,
+		WriteTimeout: time.Second * 15,
+		ReadTimeout:  time.Second * 15,
+		IdleTimeout:  time.Second * 60,
+		Handler:      route.NewHttpHandler(client, context),
+	}
+
+	func() {
+		if err := srv.ListenAndServe(); err != nil {
+			fmt.Println(err)
+		}
+	}()
 }
